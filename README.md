@@ -1,104 +1,82 @@
 # Alumni LinkedIn Profile Searcher
 
-Spring Boot REST API that launches a configured PhantomBuster Phantom, reads its launch result, and stores normalized alumni profiles in PostgreSQL.
+Spring Boot REST API that searches and extracts alumni profiles, parses them, and stores normalized alumni profiles in PostgreSQL.
 
 ## Stack
 - Java 17
 - Spring Boot 3.4.5
-- Spring Web / Spring Data JPA / Validation
+- Spring Web / Spring Data JPA / Hibernate
 - PostgreSQL
-- PhantomBuster API v2
+- PhantomBuster API v2 (LinkedIn Search Export)
+- Google Custom Search (X-Ray Search)
 - Swagger UI (springdoc-openapi)
-- JUnit 5
+- Docker & Maven
 
-## Important PhantomBuster setup
+---
 
-This project does not bypass LinkedIn login, access controls, or platform restrictions. Use only an authorized Phantom and data access that complies with LinkedIn and PhantomBuster terms.
+## Live Swagger Documentation & APIs
 
-Before using the live integration:
-1. Configure a suitable Phantom in your PhantomBuster workspace.
-2. Run it successfully once from the PhantomBuster dashboard.
-3. Obtain the API key and Agent ID.
-4. Verify the exact launch input format accepted by your chosen Phantom template in the PhantomBuster API reference.
-5. This implementation sends `university`, `designation`, and optional `passoutYear` as a JSON string in `bonusArgument`. Phantom templates differ: if your template expects a different argument structure, update `PhantomBusterClient` to match it.
-6. Ensure the Phantom emits a `resultObject` with profile rows, or adapt result parsing in `AlumniServiceImpl`.
+Once deployed or running locally:
+- **Swagger UI Interactive Documentation:** `http://localhost:8080/swagger-ui.html` (or `https://<YOUR_DEPLOYED_URL>/swagger-ui.html`)
+- **OpenAPI JSON Spec:** `http://localhost:8080/v3/api-docs` (or `https://<YOUR_DEPLOYED_URL>/v3/api-docs`)
 
-The v2 API launch returns a container ID; this application then calls `GET /containers/fetch-result-object` for that specific launch. The provider may take time to finish a launch. The current sample retries result retrieval for up to about 60 seconds. For longer-running Phantoms, implement asynchronous launch tracking rather than holding the HTTP request open.
+### Endpoints
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/alumni/search` | Performs alumni search (via PhantomBuster or Google X-Ray), extracts real profiles, and saves them to DB. |
+| `GET` | `/api/alumni/all` | Retrieves all saved alumni profiles from PostgreSQL. |
+| `GET` | `/api/alumni/search-saved` | Filters already saved alumni by `university`, `designation`, and optional `passoutYear`. |
 
-Official docs:
-- https://support.phantombuster.com/hc/en-us/articles/32398521107986-How-to-launch-a-Phantom-via-API
-- https://support.phantombuster.com/hc/en-us/articles/32476143412498-How-to-retrieve-the-result-object-for-a-specific-Phantom-launch-via-API
-- https://hub.phantombuster.com/docs/api
+---
 
-## Database setup
+## Deployment Guide (Render.com - 100% Free)
 
-Create a PostgreSQL database:
+This repository includes a multi-stage `Dockerfile` and a `render.yaml` Blueprint for 1-click cloud deployment.
 
-```sql
-CREATE DATABASE alumni_db;
+### Step 1: Push Code to GitHub
+```bash
+git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPOSITORY_NAME>.git
+git push -u origin main
 ```
 
-Set environment variables before running:
-- `DB_URL=jdbc:postgresql://localhost:5432/alumni_db`
-- `DB_USERNAME=postgres`
-- `DB_PASSWORD=your_postgres_password`
-- `PHANTOMBUSTER_API_KEY=your_api_key`
-- `PHANTOMBUSTER_AGENT_ID=your_agent_id`
+### Step 2: Deploy on Render
+1. Go to [Render Dashboard](https://dashboard.render.com/).
+2. Click **New +** $\rightarrow$ **PostgreSQL**:
+   - Name: `alumni-db`
+   - Database: `alumni_db`
+   - Plan: **Free**
+   - Click **Create Database**.
+   - Copy the **Internal Database URL** (or External URL).
+3. Click **New +** $\rightarrow$ **Web Service**:
+   - Connect your GitHub repository.
+   - Environment: **Docker** (Render will automatically detect `Dockerfile`).
+   - Plan: **Free**.
+4. In **Environment Variables**, add:
+   - `PORT`: `8080`
+   - `DB_URL`: `jdbc:postgresql://<HOSTNAME>:5432/alumni_db` (from step 2)
+   - `DB_USERNAME`: `postgres` (or your Render DB user)
+   - `DB_PASSWORD`: `<YOUR_RENDER_DB_PASSWORD>`
+   - `PHANTOMBUSTER_API_KEY`: `<YOUR_PHANTOMBUSTER_API_KEY>`
+   - `PHANTOMBUSTER_AGENT_ID`: `4202218449270876`
+   - `PHANTOMBUSTER_MOCK_MODE`: `false`
+5. Click **Create Web Service**.
 
-Do not commit API keys or database passwords.
+Once deployed:
+- **Live Deployed Application URL:** `https://<YOUR_SERVICE_NAME>.onrender.com`
+- **Live Swagger Documentation:** `https://<YOUR_SERVICE_NAME>.onrender.com/swagger-ui.html`
 
-## Run in Eclipse
-1. Extract the project ZIP.
-2. Eclipse: File -> Import -> Maven -> Existing Maven Projects.
-3. Select the extracted project directory and Finish.
-4. Right-click project -> Maven -> Update Project.
-5. Set the environment variables in Run Configurations -> Environment.
-6. Run `LinkedInSearcherApplication` as Spring Boot App.
+---
 
-## APIs
+## Alternative Cloud Deployment (Railway / Koyeb)
 
-### Search and save
-`POST http://localhost:8080/api/alumni/search`
+1. **Railway:**
+   - Click **New Project** $\rightarrow$ **Deploy from GitHub repo**.
+   - Click **Add a Service** $\rightarrow$ **Database** $\rightarrow$ **PostgreSQL**.
+   - Connect Railway environment variables (`DATABASE_URL`).
+   - Live URL will be: `https://<app-name>.up.railway.app/swagger-ui.html`.
 
-```json
-{
-  "university": "Oriental College of Technology",
-  "designation": "Java Developer",
-  "passoutYear": 2025
-}
-```
-
-`passoutYear` is optional; omit it or send `null`.
-
-### Search saved profiles (DB only)
-`GET http://localhost:8080/api/alumni/search-saved?university=Oriental College of Technology&designation=Java Developer&passoutYear=2025`
-
-### Retrieve saved profiles
-`GET http://localhost:8080/api/alumni/all`
-
-### Swagger
-`http://localhost:8080/swagger-ui.html`
-
-### OpenAPI JSON
-`http://localhost:8080/v3/api-docs`
-
-## Expected profile fields
-
-The result parser recognizes common field aliases:
-- name / fullName / full_name
-- currentRole / title / occupation / headline
-- university / school / education
-- location / city
-- linkedinHeadline / headline / summary
-- linkedinUrl / profileUrl / url
-- passoutYear / graduationYear / year
-
-You must adjust aliases if your Phantom's actual result object uses different names.
-
-## Error handling and limitations
-- Request validation returns HTTP 400.
-- PhantomBuster configuration/provider failures return HTTP 502.
-- Unexpected errors return HTTP 500.
-- LinkedIn profile URLs are used for deduplication when supplied.
-- This is a backend-only assignment; no frontend is included.
-- The application cannot return real search results until a valid PhantomBuster agent and matching Phantom input/output schema are configured.
+2. **Docker Run Locally:**
+   ```bash
+   docker build -t alumni-linkedin-searcher .
+   docker run -p 8080:8080 --env-file .env alumni-linkedin-searcher
+   ```
